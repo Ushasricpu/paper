@@ -68,14 +68,15 @@ async def get_temperature_data(
         end_time = convert_to_time(end_time)
 
     try:
-        # Construct the base query
-        # Construct the base query
-        query = """
-        SELECT datestamp, timestamp, latitude, longitude, temperature, bus_no 
-        FROM bus_data_v1
-        """
+        # Initialize conditions and params
         conditions = []
         params = []
+
+        # Construct the base query
+        query = """
+        SELECT datestamp, timestamp, temperature_c, latitude, longitude, bus_no
+        FROM airdata 
+        """
 
         # Dynamically add conditions and parameters
         if start_date:
@@ -102,6 +103,9 @@ async def get_temperature_data(
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
+        # Ensure data is ordered by datestamp and timestamp
+        query += " ORDER BY datestamp ASC, timestamp ASC limit 30000"
+
         # Fetch the data
         rows = await conn.fetch(query, *params)
 
@@ -110,7 +114,7 @@ async def get_temperature_data(
             {
                 "latitude": row["latitude"],
                 "longitude": row["longitude"],
-                "temperature": row["temperature"],
+                "temperature_c": row["temperature_c"],
                 "datestamp": row["datestamp"],
                 "timestamp": row["timestamp"],
                 "bus_no": row["bus_no"]
@@ -119,10 +123,10 @@ async def get_temperature_data(
         ]
 
         return {"data": data}
-    
+
     except Exception as e:
         logging.error(f"Error fetching data: {e}")
         return {"error": "Internal Server Error", "details": str(e)}
-    
+
     finally:
         await conn.close()

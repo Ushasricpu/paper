@@ -9,6 +9,8 @@
     "antd": "^5.22.1",
     "axios": "^1.7.7",
     "chart.js": "^4.4.6",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "date-fns": "^2.22.1",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",
     "moment": "^2.30.1",

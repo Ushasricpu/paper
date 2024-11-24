@@ -1,10 +1,12 @@
+
+
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
-import { Button, Input, DatePicker, TimePicker, Slider } from 'antd';
+import { Button, Input, DatePicker, TimePicker } from 'antd';  // Added TimePicker
 import moment from 'moment';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, LineElement, CategoryScale, LinearScale, PointElement, Title, Tooltip, Legend } from 'chart.js';
@@ -37,16 +39,16 @@ const HeatmapMap = () => {
         bus_no: '',
         startDate: '',
         endDate: '',
-        startTime: '',
-        endTime: '',
+        startTime: '',  // For the start time filter
+        endTime: '',    // For the end time filter
     });
-    const [dateRange, setDateRange] = useState([null, null]); // Date range for the slider
 
     useEffect(() => {
-        const { startDate, endDate, startTime, endTime, bus_no } = filters;
+        const { startDate, endDate, startTime, endTime,bus_no } = filters;
         let url = 'http://localhost:8000/temperature-data';
-
+    
         if (startDate || endDate || startTime || endTime || bus_no) {
+            // Use moment to format the dates and times if they are not empty
             const formattedStartDate = startDate ? moment(startDate).format('YYYY-MM-DD') : '';
             const formattedEndDate = endDate ? moment(endDate).format('YYYY-MM-DD') : '';
             const formattedStartTime = startTime ? moment(startTime, 'HH:mm:ss').format('HH:mm:ss') : '';
@@ -54,20 +56,17 @@ const HeatmapMap = () => {
 
             url += `?start_date=${formattedStartDate}&end_date=${formattedEndDate}&start_time=${formattedStartTime}&end_time=${formattedEndTime}&bus_no=${bus_no}`;
         }
-
+        console.log(url);  // Check if the URL is correct
+    
         axios.get(url)
             .then(response => {
                 const groupedData = response.data.data.reduce((acc, item) => {
-                    if (item.latitude && item.longitude && item.temperature_c) {
-                        const { bus_no, datestamp, timestamp, latitude, longitude, temperature_c } = item;
+                    if (item.latitude && item.longitude && item.temperature) {
+                        const { bus_no, timestamp } = item;
                         if (!acc[bus_no]) acc[bus_no] = [];
                         acc[bus_no].push({
-                            bus_no,
-                            datestamp,  // Date without formatting
-                            timestamp,  // Time without formatting
-                            latitude,
-                            longitude,
-                            temperature: temperature_c, // Temperature field
+                            ...item,
+                            timestamp: timestamp,  // Keep the timestamp as is for filtering
                         });
                     }
                     return acc;
@@ -77,8 +76,9 @@ const HeatmapMap = () => {
             .catch(error => {
                 console.error("Error fetching data:", error);
             });
-    }, [filters]);
-
+    }, [filters]);  // This will trigger the effect when filters change
+    
+    
     const busColors = {
         "bus1": { radius: 5, blur: 2, gradient: { 0.4: 'blue', 0.65: 'lime', 1: 'green' } },
         "bus2": { radius: 5, blur: 2, gradient: { 0.4: 'yellow', 0.65: 'orange', 1: 'purple' } },
@@ -93,78 +93,28 @@ const HeatmapMap = () => {
         }));
     };
 
-    const handleDateSliderChange = (value) => {
-        const [start, end] = value;
-        setDateRange([start, end]);
-
-        // Update the filters for fetching the data based on the selected range
-        handleFilterChange('startDate', moment(start).format('YYYY-MM-DD'));
-        handleFilterChange('endDate', moment(end).format('YYYY-MM-DD'));
-    };
-
     const generateChartData = () => {
         const chartData = {
             labels: [],
-            datasets: [],
+            datasets: []
         };
 
-        // Create a map to store the data for each bus and their corresponding datestamps and timestamps
-        const combinedData = {};
-
         Object.entries(busData).forEach(([bus_no, data]) => {
+            const dataset = {
+                label: bus_no,
+                data: [],
+                borderColor: busColors[bus_no]?.gradient ? Object.values(busColors[bus_no].gradient)[1] : 'blue',
+                fill: false
+            };
+
             data.forEach(item => {
-                const { datestamp, timestamp, temperature } = item;
-                const datetime = datestamp;  // Combine date and time for plotting
-
-                // If the datestamp does not exist, initialize it
-                if (!combinedData[datestamp]) {
-                    combinedData[datestamp] = [];
-                }
-
-                // Push the data point for each bus with its datetime and temperature
-                combinedData[datestamp].push({
-                    bus_no,
-                    temperature,
-                    datetime,
-                });
+                // Use datestamp directly as the x-axis label
+                const timestamp = item.datestamp;  // No formatting applied here
+                chartData.labels.push(timestamp);
+                dataset.data.push(item.temperature);
             });
-        });
 
-        // Sort the datestamps
-        const sortedDates = Object.keys(combinedData).sort((a, b) => new Date(a) - new Date(b));
-
-        // Loop through the sorted datestamps and create datasets for each bus
-        sortedDates.forEach(date => {
-            // Add unique datestamp to the x-axis labels (only once)
-            chartData.labels.push(date);
-
-            // For each bus, plot all the points for that datestamp
-            Object.entries(busData).forEach(([bus_no, data]) => {
-                const busDataForDate = combinedData[date].filter(item => item.bus_no === bus_no);
-
-                // Push the temperature data points for each bus
-                const dataset = chartData.datasets.find(ds => ds.label === bus_no);
-                if (dataset) {
-                    busDataForDate.forEach(item => {
-                        dataset.data.push({
-                            x: item.datetime,  // Use full datetime as x value
-                            y: item.temperature,  // Temperature as y value
-                        });
-                    });
-                } else {
-                    // If dataset for the bus doesn't exist, create one and add data points
-                    chartData.datasets.push({
-                        label: bus_no,
-                        data: busDataForDate.map(item => ({
-                            x: item.datetime,
-                            y: item.temperature,
-                        })),
-                        borderColor: busColors[bus_no]?.gradient ? Object.values(busColors[bus_no].gradient)[1] : 'blue',
-                        pointRadius: 5,  // Small circles for each point
-                        fill: false,
-                    });
-                }
-            });
+            chartData.datasets.push(dataset);
         });
 
         return chartData;
@@ -172,6 +122,7 @@ const HeatmapMap = () => {
 
     return (
         <div style={{ display: 'flex' }}>
+            {/* Side Navigation for Filters */}
             <div style={{ width: '250px', padding: '20px' }}>
                 <h3>Filter Data</h3>
 
@@ -186,9 +137,11 @@ const HeatmapMap = () => {
                     format="YYYY-MM-DD"
                     onChange={dates => {
                         if (dates && dates.length === 2) {
+                            // Ensure both start and end dates are selected before applying
                             handleFilterChange('startDate', dates[0].format('YYYY-MM-DD'));
                             handleFilterChange('endDate', dates[1].format('YYYY-MM-DD'));
                         } else {
+                            // Handle case where dates are cleared or incomplete
                             handleFilterChange('startDate', '');
                             handleFilterChange('endDate', '');
                         }
@@ -212,28 +165,26 @@ const HeatmapMap = () => {
                     style={{ marginBottom: '10px', width: '100%' }}
                 />
 
-                {/* Date Slider */}
-                <div style={{ marginTop: '20px' }}>
-                    <h4>Select Date Range</h4>
-                    <Slider
-                        range
-                        defaultValue={[new Date().getTime() - 1000 * 60 * 60 * 24 * 7, new Date().getTime()]} // Default 7 days
-                        min={new Date().getTime() - 1000 * 60 * 60 * 24 * 365} // 1 year ago
-                        max={new Date().getTime()}
-                        onChange={handleDateSliderChange}
-                        tipFormatter={value => moment(value).format('YYYY-MM-DD')}
-                    />
-                </div>
+                <Button onClick={() => {}}>Apply Filters</Button>
             </div>
 
-            <div style={{ flex: 1 }}>
-            <MapContainer 
+            {/* Map and Line Graph Container */}
+            <div style={{ flexGrow: 1 }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {/* Line Graph */}
+                    <div style={{ height: '300px', marginBottom: '20px' }}>
+                        <Line data={generateChartData()} />
+                    </div>
+
+                    {/* Map Container */}
+                    <MapContainer 
                         center={[17.393279788513272, 78.40734509206446]} 
-                        zoom={10} 
-                        style={{ width: "100%", height: "300px" }}
+                        zoom={13} 
+                        style={{ width: "100%", height: "780px" }}
                     >
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
+                        {/* Render heatmap layers */}
                         {Object.entries(busData).map(([bus_no, heatData], index) => (
                             <HeatmapLayer 
                                 key={index} 
@@ -246,8 +197,7 @@ const HeatmapMap = () => {
                             />
                         ))}
                     </MapContainer>
-
-                <Line data={generateChartData()} />
+                </div>
             </div>
         </div>
     );
